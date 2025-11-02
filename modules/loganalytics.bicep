@@ -1,0 +1,130 @@
+targetScope = 'resourceGroup'
+
+@description('Log Analytics workspace name')
+param name string
+
+@description('Region')
+param location string
+
+@description('Tags to apply')
+param tags object = {}
+
+@description('Retention in days (7–730). 0 uses workspace default.')
+@minValue(0)
+@maxValue(730)
+param retentionDays int = 30
+
+@description('Daily ingestion quota in GB. -1 = unlimited (inherit platform limits)')
+param dailyQuotaGb int = -1
+
+@description('Public network access for ingestion (Enabled/Disabled)')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccessForIngestion string = 'Enabled'
+
+@description('Public network access for query (Enabled/Disabled)')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccessForQuery string = 'Enabled'
+
+@description('Create a default Data Collection Rule (AMA) that sends common streams to this workspace')
+param createDefaultDcr bool = true
+
+@description('Name for the Data Collection Rule (if created)')
+param dcrName string = 'dcr-default'
+
+/* ---------------------------
+   Log Analytics Workspace
+---------------------------- */
+resource la 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+  name: name
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: retentionDays == 0 ? 30 : retentionDays
+    workspaceCapping: {
+      dailyQuotaGb: dailyQuotaGb
+    }
+    publicNetworkAccessForIngestion: publicNetworkAccessForIngestion
+    publicNetworkAccessForQuery: publicNetworkAccessForQuery
+    features: {
+      // Prefer RBAC over shared keys when possible
+      enableLogAccessUsingOnlyResourcePermissions: true
+    }
+  }
+}
+
+/* ---------------------------------------
+   Optional: Default Data Collection Rule
+   (for Azure Monitor Agent on VMs/AKS)
+---------------------------------------- */
+resource dcr 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if (createDefaultDcr) {
+  name: dcrName
+  location: location
+  tags: tags
+  properties: {
+    dataSources: {
+      windowsEventLogs: [
+        {
+          name: 'win-events-default'
+          streams: ['Microsoft-Event']
+          xPathQueries: ['Security', 'System', 'Application']
+        }
+      ]
+      syslog: [
+        {
+          name: 'linux-syslog-default'
+          streams: ['Microsoft-Syslog']
+          facilityNames: ['auth', 'authpriv', 'daemon', 'syslog', 'user', 'kern']
+          logLevels: ['Debug', 'Info', 'Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency']
+        }
+      ]
+      performanceCounters: [
+        {
+          name: 'perf-default'
+          streams: ['Microsoft-Perf']
+          counterSpecifiers: [
+            '\\Processor(_Total)\\% Processor Time'
+            '\\Memory\\Available MBytes'
+            '\\LogicalDisk(_Total)\\% Free Space'
+            '\\LogicalDisk(_Total)\\Disk Reads/sec'
+            '\\LogicalDisk(_Total)\\Disk Writes/sec'
+            '\\Network Interface(*)\\Bytes Total/sec'
+          ]
+          samplingFrequencyInSeconds: 60
+        }
+      ]
+      // For Container/Node metrics via AMA on AKS or Arc K8s
+      platformTelemetry: [
+        {
+          name: 'insights-metrics-default'
+          streams: ['Microsoft-InsightsMetrics']
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        {
+          name: 'la-dest'
+          workspaceResourceId: la.id
+        }
+      ]
+    }
+    dataFlows: [
+      // Route all common streams to Log Analytics
+      { streams: ['Microsoft-Event'], destinations: ['la-dest'] }
+      { streams: ['Microsoft-Syslog'], destinations: ['la-dest'] }
+      { streams: ['Microsoft-Perf'], destinations: ['la-dest'] }
+      { streams: ['Microsoft-InsightsMetrics'], destinations: ['la-dest'] }
+    ]
+  }
+}
+
+/* -------------
+    Outputs
+------------- */
+output workspaceId string = la.id
+output workspaceName string = la.name
+output workspaceGuid string = la.properties.customerId // a.k.a. Workspace (Customer) ID
+output dcrId string = createDefaultDcr ? dcr.id : ''

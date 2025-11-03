@@ -18,7 +18,7 @@ param softDeleteRetentionDays int = 90
 param rbacAuthorization bool = true
 
 @description('Allow public network access (recommended Disabled; use private endpoints later)')
-@allowed([ 'Enabled' 'Disabled' ])
+@allowed(['Enabled', 'Disabled'])
 param publicNetworkAccess string = 'Disabled'
 
 @description('IP rules allowed when public network access is Enabled')

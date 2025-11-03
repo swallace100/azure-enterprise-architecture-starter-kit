@@ -1,62 +1,54 @@
 targetScope = 'subscription'
 
-@description('Subscription to assign policies to')
-param targetSubscriptionId string = subscription().subscriptionId
+@description('Organization tag name')
+param tagOrg string = 'org'
 
-@description('Tags that must exist on resources')
-param requiredTags array = [
-  'org'
-  'env'
-  'owner'
-]
+@description('Environment tag name')
+param tagEnv string = 'env'
 
-var policyPrefix = 'starter' // rename for your org
+@description('Owner tag name')
+param tagOwner string = 'owner'
+
+var policyPrefix = 'starter'
+
+// Helper for Azure Policy field expression (kept readable):
+// Outer quotes are single (Bicep), inner are double (Policy expression).
+var tagFieldExpression = '[format("tags[{0}]", parameters("tagName"))]'
 
 // ---------------------
-// Policy: Require tags
+// Policy: Require a single tag
 // ---------------------
-resource polRequireTags 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
-  name: '${policyPrefix}-require-tags'
+resource polRequireTag 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
+  name: '${policyPrefix}-require-tag'
   properties: {
     policyType: 'Custom'
     mode: 'Indexed'
-    displayName: 'Require specific tags on resources'
-    description: 'Ensures required tags are present on all resources.'
+    displayName: 'Require a specific tag on resources'
+    description: 'Ensures the specified tag exists on non-RG resources.'
     metadata: {
       category: 'Tags'
       version: '1.0.0'
     }
     parameters: {
-      requiredTags: {
-        type: 'Array'
-        metadata: {
-          displayName: 'Required tag names'
-        }
+      tagName: {
+        type: 'String'
+        metadata: { displayName: 'Required tag name' }
       }
     }
     policyRule: {
       if: {
-        field: 'type'
-        notEquals: 'Microsoft.Resources/subscriptions/resourceGroups'
+        allOf: [
+          { field: 'type', notEquals: 'Microsoft.Resources/subscriptions/resourceGroups' }
+          { field: tagFieldExpression, exists: 'false' }
+        ]
       }
-      then: {
-        effect: 'deny'
-        condition: {
-          anyOf: [
-            for t in requiredTags: {
-              field: '[concat(''tags['', '''', t, '''', '']'')]'
-              exists: false
-            }
-          ]
-        }
-      }
+      then: { effect: 'deny' }
     }
   }
 }
 
 // ---------------------------------------
-// Policy: Enforce minimum TLS 1.2 on PaaS
-// (storage accounts in this starter)
+// Policy: Enforce minimum TLS 1.2 for Storage
 // ---------------------------------------
 resource polEnforceTls 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${policyPrefix}-enforce-tls12'
@@ -102,6 +94,7 @@ resource polDenyPublicBlob 'Microsoft.Authorization/policyDefinitions@2021-06-01
 // ------------------------------
 // Initiative (Policy Set)
 // ------------------------------
+// Expose three parameters at the initiative level so you can override at assignment time.
 resource initiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
   name: '${policyPrefix}-base-initiative'
   properties: {
@@ -110,16 +103,29 @@ resource initiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = 
     metadata: { category: 'Compliance', version: '1.0.0' }
     policyType: 'Custom'
     parameters: {
-      requiredTags: {
-        type: 'Array'
-        metadata: { displayName: 'Required tag names' }
-      }
+      tagOrg: { type: 'String', metadata: { displayName: 'Org tag' }, defaultValue: tagOrg }
+      tagEnv: { type: 'String', metadata: { displayName: 'Env tag' }, defaultValue: tagEnv }
+      tagOwner: { type: 'String', metadata: { displayName: 'Owner tag' }, defaultValue: tagOwner }
     }
+
+    // To reference initiative parameters, we must use Policy expressions as strings.
     policyDefinitions: [
       {
-        policyDefinitionId: polRequireTags.id
+        policyDefinitionId: polRequireTag.id
         parameters: {
-          requiredTags: { value: requiredTags }
+          tagName: { value: '[parameters("tagOrg")]' }
+        }
+      }
+      {
+        policyDefinitionId: polRequireTag.id
+        parameters: {
+          tagName: { value: '[parameters("tagEnv")]' }
+        }
+      }
+      {
+        policyDefinitionId: polRequireTag.id
+        parameters: {
+          tagName: { value: '[parameters("tagOwner")]' }
         }
       }
       { policyDefinitionId: polEnforceTls.id }
@@ -129,17 +135,19 @@ resource initiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = 
 }
 
 // ------------------------------
-// Initiative Assignment
+// Initiative Assignment (current subscription)
 // ------------------------------
 resource assignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
   name: '${policyPrefix}-baseline-assignment'
-  scope: subscription(targetSubscriptionId)
   properties: {
     displayName: 'Starter baseline assignment'
     policyDefinitionId: initiative.id
     enforcementMode: 'Default'
+    // You can override these at deploy time if you want custom names
     parameters: {
-      requiredTags: { value: requiredTags }
+      tagOrg: { value: tagOrg }
+      tagEnv: { value: tagEnv }
+      tagOwner: { value: tagOwner }
     }
   }
 }

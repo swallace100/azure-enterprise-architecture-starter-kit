@@ -1,6 +1,6 @@
 targetScope = 'resourceGroup'
 
-@allowed([ 'TLS1_2' 'TLS1_3' ])
+@allowed(['TLS1_2', 'TLS1_3'])
 param minTlsVersion string
 param name string
 param location string
@@ -9,7 +9,7 @@ param enableHierNs bool = true
 param allowBlobPublicAccess bool = false
 param allowSharedKeyAccess bool = false
 param defaultActionDeny bool = true
-@description('If provided, diagnostic settings will be sent to this LA workspace')
+@description('If provided, diagnostic settings will be sent to this Log Analytics workspace')
 param logAnalyticsWorkspaceId string = ''
 
 resource st 'Microsoft.Storage/storageAccounts@2023-05-01' = {
@@ -47,7 +47,7 @@ resource stDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if 
     ]
     metrics: [
       { category: 'Transaction', enabled: true }
-      { category: 'Capacity',   enabled: true }
+      { category: 'Capacity', enabled: true }
     ]
   }
 }

@@ -5,20 +5,44 @@ on:
     paths: ["main.bicep", "modules/**", "environments/dev/**"]
 
 permissions:
-  id-token: write
+  id-token: write # required for OIDC
   contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # uncomment if your secrets are in an Environment called "dev"
+    # environment: dev
+
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/login@v2
+
+      # Sanity: make sure secrets are present (won't print their values)
+      - name: Check required secrets present
+        env:
+          CID: ${{ secrets.AZURE_CLIENT_ID }}
+          TID: ${{ secrets.AZURE_TENANT_ID }}
+          SID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          [ -z "$CID" ] && echo "::error::AZURE_CLIENT_ID missing" && exit 1 || echo "AZURE_CLIENT_ID: OK"
+          [ -z "$TID" ] && echo "::error::AZURE_TENANT_ID missing" && exit 1 || echo "AZURE_TENANT_ID: OK"
+          [ -z "$SID" ] && echo "::error::AZURE_SUBSCRIPTION_ID missing" && exit 1 || echo "AZURE_SUBSCRIPTION_ID: OK"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
         with:
+          # Explicitly force OIDC mode so it doesn't try service-principal fallback
+          auth-type: id-token
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: false
+
+      - name: Verify az context
+        run: |
+          az account show --output table
+          az account get-access-token --resource https://management.azure.com/ >/dev/null
+
       - name: Deploy subscription
         run: |
           az deployment sub create \

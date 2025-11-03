@@ -56,7 +56,7 @@ resource la 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
 }
 
 /* ---------------------------------------
-   Optional: Default Data Collection Rule
+   Default Data Collection Rule
    (for Azure Monitor Agent on VMs/AKS)
 ---------------------------------------- */
 resource dcr 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if (createDefaultDcr) {

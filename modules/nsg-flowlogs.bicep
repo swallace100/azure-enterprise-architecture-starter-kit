@@ -24,16 +24,21 @@ param trafficAnalyticsInterval int = 60
 @maxValue(3650)
 param storageRetentionDays int = 0
 
+@description('Tags to apply to created resources')
+param tags object = {}
+
+var nsgName = last(split(networkSecurityGroupId, '/'))
+
 // Ensure a Network Watcher exists in this region (idempotent)
 resource watcher 'Microsoft.Network/networkWatchers@2023-11-01' = {
-  name: 'NetworkWatcher_' + location
+  name: 'NetworkWatcher_${location}'
   location: location
+  tags: tags
 }
 
-// Flow logs resource under the watcher
+// Flow logs under the watcher (child resource)
 resource flow 'Microsoft.Network/networkWatchers/flowLogs@2023-11-01' = {
-  name: 'flowLog-' + last(split(networkSecurityGroupId, '/'))
-  scope: watcher
+  name: 'flowLog-${nsgName}'
   properties: {
     targetResourceId: networkSecurityGroupId
     enabled: true
@@ -46,15 +51,16 @@ resource flow 'Microsoft.Network/networkWatchers/flowLogs@2023-11-01' = {
       type: 'JSON'
       version: 2
     }
-    flowAnalyticsConfiguration: enableTrafficAnalytics ? {
-      networkWatcherFlowAnalyticsConfiguration: {
-        enabled: true
-        workspaceId: logAnalyticsWorkspaceResourceId
-        workspaceRegion: location
-        workspaceResourceId: logAnalyticsWorkspaceResourceId
-        trafficAnalyticsInterval: trafficAnalyticsInterval
-      }
-    } : null
+    flowAnalyticsConfiguration: enableTrafficAnalytics
+      ? {
+          networkWatcherFlowAnalyticsConfiguration: {
+            enabled: true
+            workspaceResourceId: logAnalyticsWorkspaceResourceId
+            workspaceRegion: location
+            trafficAnalyticsInterval: trafficAnalyticsInterval
+          }
+        }
+      : null
   }
 }
 

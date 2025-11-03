@@ -11,9 +11,9 @@ param baseTags object = {
 }
 
 var rgPlatformName = 'rg-platform-${baseTags.env}'
-var rgNetworkName  = 'rg-network-${baseTags.env}'
-var rgAppName      = 'rg-app-${baseTags.env}'
-var rgSecName      = 'rg-secops-${baseTags.env}'
+var rgNetworkName = 'rg-network-${baseTags.env}'
+var rgAppName = 'rg-app-${baseTags.env}'
+var rgSecName = 'rg-secops-${baseTags.env}'
 
 // Resource Groups
 resource rgPlatform 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -56,7 +56,7 @@ module vnet 'modules/vnet.bicep' = {
   params: {
     name: 'vnet-${baseTags.env}'
     location: location
-    addressSpace: [ '10.20.0.0/16' ]
+    addressSpace: ['10.20.0.0/16']
     subnets: [
       { name: 'snet-app', prefix: '10.20.10.0/24' }
       { name: 'snet-data', prefix: '10.20.20.0/24' }
@@ -100,8 +100,9 @@ module storage 'modules/storage.bicep' = {
 module policy 'modules/policy.bicep' = {
   name: 'basePolicy'
   params: {
-    targetSubscriptionId: subscription().subscriptionId
-    requiredTags: ['org','env','owner']
+    tagOrg: 'org'
+    tagEnv: 'env'
+    tagOwner: 'owner'
   }
 }
 
@@ -114,16 +115,26 @@ module subActivityLogs 'modules/diagnostics.bicep' = {
   }
 }
 
-// Suppose you created an NSG named nsg-app (not shown here)
+module nsgApp 'modules/nsg.bicep' = {
+  name: 'nsgApp'
+  scope: resourceGroup(rgNetwork.name)
+  params: {
+    name: 'nsg-app-${baseTags.env}'
+    location: location
+    tags: baseTags
+  }
+}
+
 module nsgFlow 'modules/nsg-flowlogs.bicep' = {
   name: 'nsgFlowLogsApp'
   scope: resourceGroup(rgNetwork.name)
   params: {
     location: location
-    networkSecurityGroupId: nsgApp.id
-    storageAccountId: storage.outputs.storageId     // or a dedicated stg in rg-secops
+    networkSecurityGroupId: nsgApp.outputs.nsgId
+    storageAccountId: storage.outputs.storageId
     logAnalyticsWorkspaceResourceId: logAnalytics.outputs.workspaceId
     trafficAnalyticsInterval: 60
+    tags: baseTags
   }
 }
 
@@ -133,21 +144,13 @@ module identities 'modules/identities.bicep' = {
   params: {
     identities: [
       { name: 'idp-github-oidc', location: location, tags: baseTags }
-      { name: 'workload-app',    location: location, tags: baseTags }
+      { name: 'workload-app', location: location, tags: baseTags }
     ]
     roleAssignments: [
-      // CI identity gets Contributor at sub (or RG if you prefer tighter scope)
-      {
-        identityName: 'idp-github-oidc'
-        scopeResourceId: subscriptionResourceId('Microsoft.Resources/subscriptions', subscription().subscriptionId)
-        roleName: 'Contributor'
-      }
-      // Workload identity gets Reader at RG app (fine-tune later)
-      {
-        identityName: 'workload-app'
-        scopeResourceId: resourceGroup(rgApp.name).id
-        roleName: 'Reader'
-      }
+      // subscription-level RBAC for CI identity
+      { identityName: 'idp-github-oidc', roleName: 'Contributor', scope: 'sub' }
+      // RG-level RBAC on THIS RG (rgPlatform)
+      { identityName: 'workload-app', roleName: 'Reader', scope: 'rg' }
     ]
   }
 }

@@ -12,47 +12,20 @@ param tags object = {}
 @description('Address space list (e.g., ["10.20.0.0/16"])')
 param addressSpace array
 
-@description('Subnets definition: name, prefix, optional serviceEndpoints (string[]), delegations (array of { serviceName: string })')
+@description('Subnets: { name, prefix, optional serviceEndpoints: string[], optional delegations: { serviceName }[] }')
 param subnets array = [
   // Example:
   // {
   //   name: 'snet-app'
   //   prefix: '10.20.10.0/24'
   //   serviceEndpoints: [ 'Microsoft.Storage' ]
-  //   delegations: [
-  //     { serviceName: 'Microsoft.App/environments' }
-  //   ]
+  //   delegations: [ { serviceName: 'Microsoft.App/environments' } ]
   // }
 ]
 
-/*
-  Normalize subnet inputs up-front so we don't nest for-expressions in properties.
-*/
-var normalizedSubnets = [
-  for s in subnets: {
-    name: s.name
-    prefix: s.prefix
-    serviceEndpointsObjs: empty(s.serviceEndpoints)
-      ? []
-      : [
-          for se in s.serviceEndpoints: {
-            service: se
-          }
-        ]
-    delegationsObjs: empty(s.delegations)
-      ? []
-      : [
-          for d in s.delegations: {
-            name: 'del-${d.serviceName}'
-            properties: {
-              serviceName: d.serviceName
-              actions: []
-            }
-          }
-        ]
-  }
-]
-
+/* ---------------------------------------------
+   Virtual Network
+---------------------------------------------- */
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   name: name
   location: location
@@ -61,28 +34,47 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
     addressSpace: {
       addressPrefixes: addressSpace
     }
-    subnets: [
-      for sn in normalizedSubnets: {
-        name: sn.name
-        properties: {
-          addressPrefix: sn.prefix
-          privateEndpointNetworkPolicies: 'Disabled' // friendly for Private Endpoints later
-          privateLinkServiceNetworkPolicies: 'Enabled'
-          serviceEndpoints: sn.serviceEndpointsObjs
-          delegations: sn.delegationsObjs
-        }
-      }
-    ]
   }
 }
 
+/* ---------------------------------------------
+   Subnets as child resources (loop)
+   — Most compatible pattern across Bicep versions
+---------------------------------------------- */
+resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = [
+  for s in subnets: {
+    parent: vnet
+    name: '${s.name}'
+    properties: {
+      addressPrefix: s.prefix
+      privateEndpointNetworkPolicies: 'Disabled'
+      privateLinkServiceNetworkPolicies: 'Enabled'
+      serviceEndpoints: [
+        for se in (s.serviceEndpoints ?? []): {
+          service: se
+        }
+      ]
+      delegations: [
+        for d in (s.delegations ?? []): {
+          name: 'del-${d.serviceName}'
+          properties: {
+            serviceName: d.serviceName
+          }
+        }
+      ]
+    }
+  }
+]
+
+/* ---------------------------------------------
+   Outputs
+---------------------------------------------- */
 output vnetId string = vnet.id
 
-// Older Bicep versions can choke on object-comprehension in outputs,
-// so we emit an array of {name, id} pairs for portability.
+// Use the input `subnets` for the loop, and index into the resource collection
 output subnetIds array = [
-  for s in vnet.properties.subnets: {
+  for (s, i) in subnets: {
     name: s.name
-    id: s.id
+    id: subnet[i].id
   }
 ]

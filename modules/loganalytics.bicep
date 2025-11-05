@@ -25,7 +25,7 @@ param publicNetworkAccessForIngestion string = 'Enabled'
 @allowed(['Enabled', 'Disabled'])
 param publicNetworkAccessForQuery string = 'Enabled'
 
-@description('Create a default Data Collection Rule (AMA) that sends common streams to this workspace')
+@description('Create a default DCR (AMA) that sends common VM streams (Windows Events, Syslog, Perf) to this workspace')
 param createDefaultDcr bool = true
 
 @description('Name for the Data Collection Rule (if created)')
@@ -39,13 +39,9 @@ resource la 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   location: location
   tags: tags
   properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
+    sku: { name: 'PerGB2018' }
     retentionInDays: retentionDays == 0 ? 30 : retentionDays
-    workspaceCapping: {
-      dailyQuotaGb: dailyQuotaGb
-    }
+    workspaceCapping: { dailyQuotaGb: dailyQuotaGb }
     publicNetworkAccessForIngestion: publicNetworkAccessForIngestion
     publicNetworkAccessForQuery: publicNetworkAccessForQuery
     features: {
@@ -56,8 +52,11 @@ resource la 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
 }
 
 /* ---------------------------------------
-   Default Data Collection Rule
-   (for Azure Monitor Agent on VMs/AKS)
+   Default Data Collection Rule (for AMA)
+   NOTE:
+   - Correct stream names
+   - Correct XPath pattern: Channel!* (not just "Channel")
+   - NO PlatformTelemetry here (must be its own DCR kind)
 ---------------------------------------- */
 resource dcr 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if (createDefaultDcr) {
   name: dcrName
@@ -68,8 +67,14 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if (createDef
       windowsEventLogs: [
         {
           name: 'win-events-default'
-          streams: ['Microsoft-Event']
-          xPathQueries: ['Security', 'System', 'Application']
+          streams: [
+            'Microsoft-WindowsEvent'
+          ]
+          xPathQueries: [
+            'Security!*'
+            'System!*'
+            'Application!*'
+          ]
         }
       ]
       syslog: [
@@ -95,13 +100,7 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if (createDef
           samplingFrequencyInSeconds: 60
         }
       ]
-      // For Container/Node metrics via AMA on AKS or Arc K8s
-      platformTelemetry: [
-        {
-          name: 'insights-metrics-default'
-          streams: ['Microsoft-InsightsMetrics']
-        }
-      ]
+      // ❌ Removed platformTelemetry from this DCR.
     }
     destinations: {
       logAnalytics: [
@@ -112,19 +111,45 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if (createDef
       ]
     }
     dataFlows: [
-      // Route all common streams to Log Analytics
-      { streams: ['Microsoft-Event'], destinations: ['la-dest'] }
+      { streams: ['Microsoft-WindowsEvent'], destinations: ['la-dest'] }
       { streams: ['Microsoft-Syslog'], destinations: ['la-dest'] }
       { streams: ['Microsoft-Perf'], destinations: ['la-dest'] }
-      { streams: ['Microsoft-InsightsMetrics'], destinations: ['la-dest'] }
     ]
   }
 }
 
-/* -------------
-    Outputs
-------------- */
+/* ---------------------------------------
+   (Optional) Separate DCR for PlatformTelemetry
+   Uncomment ONLY if you truly need it, and do not mix with WindowsEvent/Syslog/Perf.
+   Check current allowed streams for PlatformTelemetry in Azure docs.
+
+resource dcrPlatform 'Microsoft.Insights/dataCollectionRules@2022-06-01' = {
+  name: '${dcrName}-platform'
+  location: location
+  kind: 'PlatformTelemetry'
+  properties: {
+    dataSources: {
+      platformTelemetry: [
+        {
+          name: 'plat-default'
+          // streams: [ '<valid-platform-streams-here>' ]
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        { name: 'la-dest', workspaceResourceId: la.id }
+      ]
+    }
+    dataFlows: [
+      // { streams: [ '<valid-platform-streams-here>' ], destinations: [ 'la-dest' ] }
+    ]
+  }
+}
+---------------------------------------- */
+
+/* ------------- Outputs ------------- */
 output workspaceId string = la.id
 output workspaceName string = la.name
-output workspaceGuid string = la.properties.customerId // a.k.a. Workspace (Customer) ID
+output workspaceGuid string = la.properties.customerId
 output dcrId string = createDefaultDcr ? dcr.id : ''

@@ -13,19 +13,18 @@ param tags object = {}
 param addressSpace array
 
 @description('Subnets: { name, prefix, optional serviceEndpoints: string[], optional delegations: { serviceName }[] }')
-param subnets array = [
-  // Example:
-  // {
-  //   name: 'snet-app'
-  //   prefix: '10.20.10.0/24'
-  //   serviceEndpoints: [ 'Microsoft.Storage' ]
-  //   delegations: [ { serviceName: 'Microsoft.App/environments' } ]
-  // }
+param subnets array = []
+
+// --- Normalize so properties always exist (avoid ARM missing-property errors)
+var normalizedSubnets = [
+  for s in subnets: {
+    name: s.name
+    prefix: s.prefix
+    serviceEndpoints: s.?serviceEndpoints ?? []
+    delegations: s.?delegations ?? []
+  }
 ]
 
-/* ---------------------------------------------
-   Virtual Network
----------------------------------------------- */
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   name: name
   location: location
@@ -37,44 +36,24 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   }
 }
 
-/* ---------------------------------------------
-   Subnets as child resources (loop)
-   — Most compatible pattern across Bicep versions
----------------------------------------------- */
 resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = [
-  for s in subnets: {
+  for sn in normalizedSubnets: {
     parent: vnet
-    name: '${s.name}'
+    name: sn.name
     properties: {
-      addressPrefix: s.prefix
+      addressPrefix: sn.prefix
       privateEndpointNetworkPolicies: 'Disabled'
       privateLinkServiceNetworkPolicies: 'Enabled'
-      serviceEndpoints: [
-        for se in (s.serviceEndpoints ?? []): {
-          service: se
-        }
-      ]
+      serviceEndpoints: [for se in sn.serviceEndpoints: { service: se }]
       delegations: [
-        for d in (s.delegations ?? []): {
+        for d in sn.delegations: {
           name: 'del-${d.serviceName}'
-          properties: {
-            serviceName: d.serviceName
-          }
+          properties: { serviceName: d.serviceName }
         }
       ]
     }
   }
 ]
 
-/* ---------------------------------------------
-   Outputs
----------------------------------------------- */
 output vnetId string = vnet.id
-
-// Use the input `subnets` for the loop, and index into the resource collection
-output subnetIds array = [
-  for (s, i) in subnets: {
-    name: s.name
-    id: subnet[i].id
-  }
-]
+output subnetIds array = [for (sn, i) in normalizedSubnets: { name: sn.name, id: subnet[i].id }]

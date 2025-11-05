@@ -76,6 +76,14 @@ az account set --subscription "<SUBSCRIPTION_ID>"
 az deployment sub create \
   --location japaneast \
   --template-file main.bicep \
-  --parameters @environments/dev/sub.bicepparam
+  --parameters @environments/dev/sub.parameters.json
+
+```
+
+### Fix tenant issues
+
+```bash
+az logout
+az login --tenant <TENANT_ID> --use-device-code
 
 ```

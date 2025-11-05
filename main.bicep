@@ -46,6 +46,7 @@ module logAnalytics 'modules/loganalytics.bicep' = {
     location: location
     tags: baseTags
     retentionDays: 30
+    createDefaultDcr: false // ⬅️ turn off for now
   }
 }
 
@@ -111,7 +112,6 @@ module subActivityLogs 'modules/diagnostics.bicep' = {
   name: 'activityLogs'
   params: {
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
-    retentionDays: 0
   }
 }
 
@@ -125,16 +125,15 @@ module nsgApp 'modules/nsg.bicep' = {
   }
 }
 
-module nsgFlow 'modules/nsg-flowlogs.bicep' = {
-  name: 'nsgFlowLogsApp'
+module vnetFlow 'modules/vnet-flowlogs.bicep' = {
+  name: 'vnetFlowLogs'
   scope: resourceGroup(rgNetwork.name)
   params: {
     location: location
-    networkSecurityGroupId: nsgApp.outputs.nsgId
+    virtualNetworkId: vnet.outputs.vnetId
     storageAccountId: storage.outputs.storageId
     logAnalyticsWorkspaceResourceId: logAnalytics.outputs.workspaceId
     trafficAnalyticsInterval: 60
-    tags: baseTags
   }
 }
 

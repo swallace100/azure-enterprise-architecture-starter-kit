@@ -3,8 +3,8 @@ targetScope = 'resourceGroup'
 @description('Region for Network Watcher and flow logs')
 param location string
 
-@description('Existing NSG resource ID to enable flow logs on')
-param networkSecurityGroupId string
+@description('Virtual Network resource ID to enable flow logs on')
+param virtualNetworkId string
 
 @description('Storage account resource ID to store raw flow logs')
 param storageAccountId string
@@ -24,24 +24,25 @@ param trafficAnalyticsInterval int = 60
 @maxValue(3650)
 param storageRetentionDays int = 0
 
-@description('Tags to apply to created resources')
-param tags object = {}
-
-var nsgName = last(split(networkSecurityGroupId, '/'))
+var vnetName = last(split(virtualNetworkId, '/'))
 
 // Ensure a Network Watcher exists in this region (idempotent)
 resource watcher 'Microsoft.Network/networkWatchers@2023-11-01' = {
   name: 'NetworkWatcher_${location}'
   location: location
-  tags: tags
 }
 
-// Flow logs under the watcher (child resource)
-resource flow 'Microsoft.Network/networkWatchers/flowLogs@2023-11-01' = {
-  name: 'flowLog-${nsgName}'
+// VNet flow logs (child of watcher)
+resource vnetFlow 'Microsoft.Network/networkWatchers/flowLogs@2023-11-01' = {
+  name: 'vnetFlowLog-${vnetName}'
+  parent: watcher
+  location: location
   properties: {
-    targetResourceId: networkSecurityGroupId
+    targetResourceId: virtualNetworkId
     enabled: true
+
+    // flowLogType removed — Azure infers VNet vs NSG from targetResourceId
+
     storageId: storageAccountId
     retentionPolicy: {
       days: storageRetentionDays
@@ -64,4 +65,4 @@ resource flow 'Microsoft.Network/networkWatchers/flowLogs@2023-11-01' = {
   }
 }
 
-output flowLogsId string = flow.id
+output flowLogsId string = vnetFlow.id

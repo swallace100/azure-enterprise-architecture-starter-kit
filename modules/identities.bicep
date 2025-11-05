@@ -3,14 +3,13 @@ targetScope = 'resourceGroup'
 @description('Identities to create. Example: [{ name: "idp-github-oidc", location: "japaneast", tags: { role: "cicd" } }]')
 param identities array = []
 
-@description('Optional RBAC role assignments after identities are created. Scope is either "rg" (this RG) or "sub" (current subscription).')
+@description('Optional RBAC role assignments for THIS resource group. (For sub-scope, use a separate subscription-scoped module.)')
 /*
   Example:
   [
-    { identityName: 'idp-github-oidc', roleName: 'Contributor', scope: 'sub' },
-    { identityName: 'workload-app',    roleName: 'Reader',      scope: 'rg'  }
+    { identityName: 'workload-app', roleName: 'Reader' },
+    { identityName: 'idp-github-oidc', roleDefinitionId: 'b24988ac-6180-42a0-ab88-20f7382dd24c' }
   ]
-  You may also pass roleDefinitionId instead of roleName.
 */
 param roleAssignments array = []
 
@@ -39,48 +38,28 @@ resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = [
 ]
 
 /* -----------------------
-   Helper: Array of identity names so we can look up an index by name
+   Helpers
 ------------------------ */
 var identityNames = [for id in identities: id.name]
 
 /* -----------------------
-   Role assignments at SUBSCRIPTION scope (this subscription)
------------------------- */
-resource rbacSub 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for ra in roleAssignments: if (ra.scope == 'sub') {
-    // find the matching identity index by name
-    // NOTE: indexOf returns -1 if not found; consider validating in CI
-    name: guid(
-      subscription().id,
-      (ra.roleDefinitionId ?? roleIds[ra.roleName]),
-      uami[indexOf(identityNames, ra.identityName)].id
-    )
-    properties: {
-      roleDefinitionId: ra.roleDefinitionId ?? subscriptionResourceId(
-        'Microsoft.Authorization/roleDefinitions',
-        roleIds[ra.roleName]
-      )
-      principalId: uami[indexOf(identityNames, ra.identityName)].properties.principalId
-      principalType: 'ServicePrincipal'
-    }
-  }
-]
-
-/* -----------------------
-   Role assignments at RESOURCE GROUP scope (this RG)
+   RG-scope Role Assignments (only)
+   - Safe access with optional chaining (ra.?roleDefinitionId)
+   - Name seeds are compile-time safe (RG id, roleDefId, UAMI resourceId)
 ------------------------ */
 resource rbacRg 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
-  for ra in roleAssignments: if (ra.scope == 'rg') {
+  for ra in roleAssignments: if (indexOf(identityNames, ra.identityName) != -1) {
     name: guid(
       resourceGroup().id,
-      (ra.roleDefinitionId ?? roleIds[ra.roleName]),
+      // prefer explicit roleDefinitionId if provided; otherwise map roleName
+      (ra.?roleDefinitionId ?? roleIds[ra.roleName]),
       uami[indexOf(identityNames, ra.identityName)].id
     )
     scope: resourceGroup()
     properties: {
-      roleDefinitionId: ra.roleDefinitionId ?? subscriptionResourceId(
+      roleDefinitionId: subscriptionResourceId(
         'Microsoft.Authorization/roleDefinitions',
-        roleIds[ra.roleName]
+        (ra.?roleDefinitionId ?? roleIds[ra.roleName])
       )
       principalId: uami[indexOf(identityNames, ra.identityName)].properties.principalId
       principalType: 'ServicePrincipal'
@@ -89,7 +68,7 @@ resource rbacRg 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
 ]
 
 /* -----------------------
-   Outputs (portable array)
+   Outputs
 ------------------------ */
 output identities array = [
   for (id, i) in identities: {

@@ -111,30 +111,34 @@ resource polDenyPublicBlob 'Microsoft.Authorization/policyDefinitions@2021-06-01
 // ---------------------
 // Initiative
 // ---------------------
+// ---------------------
+// Initiative
+// ---------------------
 resource initiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
   name: '${policyPrefix}-base-initiative'
   properties: {
     displayName: 'Starter baseline initiative'
     description: 'Tag hygiene + TLS + no public blob.'
-    metadata: { category: 'Compliance', version: '1.0.2' } // bumped
+    metadata: { category: 'Compliance', version: '1.0.3' } // bump
     policyType: 'Custom'
     parameters: {
-      // bubble up the excluded types to the set so you can tweak at assignment time
       excludedTypes: {
         type: 'Array'
         metadata: { displayName: 'Excluded resource types' }
         defaultValue: excludedTypes
       }
-      tagOrg: { type: 'String', defaultValue: 'org' } // <-- add defaultValue
-      tagEnv: { type: 'String', defaultValue: 'env' } // <-- add defaultValue
-      tagOwner: { type: 'String', defaultValue: 'owner' } // <-- add defaultValue
+      // These must have defaults (you already saw the error without them)
+      tagOrg: { type: 'String', defaultValue: 'org' }
+      tagEnv: { type: 'String', defaultValue: 'env' }
+      tagOwner: { type: 'String', defaultValue: 'owner' }
     }
     policyDefinitions: [
       // Require org
       {
         policyDefinitionId: polRequireTag.id
         parameters: {
-          tagName: { value: 'org' }
+          // Use the initiative parameter instead of hard-coded 'org'
+          tagName: { value: '[parameters(\'tagOrg\')]' }
           excludedTypes: { value: '[parameters(\'excludedTypes\')]' }
         }
       }
@@ -142,7 +146,7 @@ resource initiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = 
       {
         policyDefinitionId: polRequireTag.id
         parameters: {
-          tagName: { value: 'env' }
+          tagName: { value: '[parameters(\'tagEnv\')]' }
           excludedTypes: { value: '[parameters(\'excludedTypes\')]' }
         }
       }
@@ -150,7 +154,7 @@ resource initiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = 
       {
         policyDefinitionId: polRequireTag.id
         parameters: {
-          tagName: { value: 'owner' }
+          tagName: { value: '[parameters(\'tagOwner\')]' }
           excludedTypes: { value: '[parameters(\'excludedTypes\')]' }
         }
       }
@@ -168,7 +172,7 @@ resource assignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
   properties: {
     displayName: 'Starter baseline assignment'
     policyDefinitionId: initiative.id
-    enforcementMode: 'Default' // set to 'DoNotEnforce' if you need a bootstrap pass
+    enforcementMode: 'Default'
     parameters: {
       excludedTypes: { value: excludedTypes }
       tagOrg: { value: tagOrg }

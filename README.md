@@ -1,89 +1,85 @@
-# azure-enterprise-architecture-starter-kit
+![Azure](https://img.shields.io/badge/Azure-Bicep-blue?logo=microsoftazure)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
-This is a Bicep starter kit for Azure enterprise architecture that includes an app. This can be used by a range of organizations to get started almost immediately with Azure ready to go.
+# Azure Enterprise Architecture Starter Kit
 
-## Plan:
+This repository provides a **subscription-scope Bicep blueprint** for standing up a secure, enterprise-ready Azure landing zone with baseline governance, networking, monitoring, and identity — deployable in minutes.
 
-### Phase 0 — Core platform (minimal, day-1)
+It’s designed for teams who want Azure **ready on Day 1** with best-practice defaults.
 
-- Subscription-scope deployment creates:
+---
 
-  - Resource groups: rg-platform, rg-network, rg-app, rg-secops
+## What gets deployed automatically
 
-  - Log Analytics workspace, Azure Monitor DCR, diag settings plumbed everywhere
+- **Resource groups**
+  - `rg-platform`, `rg-network`, `rg-app`, `rg-secops`
+- **Networking**
+  - Hub-lite VNet, subnets, private-endpoint-safe configuration
+- **Security**
+  - Key Vault (RBAC), TLS enforcement, deny public blob, managed identities
+- **Observability**
+  - Log Analytics workspace + Data Collection Rule + diagnostics wired in
+- **Governance**
+  - Base Azure Policy initiative (tagging, TLS, no public blob)
 
-  - Key Vault (RBAC mode), Storage (Data Lake Gen2 enabled), and VNet (hub-lite)
+---
 
-  - Managed Identities for CI/CD and workloads
+## Repository Structure
 
-  - Base Azure Policy assignment (tagging, deny public blob, enforce TLS, disallow RDP/SSH inbound, etc.)
-
-### Phase 1 — App baseline
-
-- Pick one: Azure Container Apps (simpler) or AKS (heavier later).
-
-  - Front Door (WAF) or App GW (WAF), ACR, Application Insights, private endpoints for KV/Storage.
-
-  - Optional: Azure SQL or Cosmos DB module with private endpoints.
-
-### Phase 2 — Data + events
-
-- Event Hub / Service Bus, Data Factory, DL Gen2 zones (raw/curated), scheduled pipelines.
-
-### Phase 3 — Security & governance
-
-- More policies (naming, SKUs, regions), Defender for Cloud plans, workload identity federation (GitHub OIDC) for CI/CD, Secrets rotation.
-
-### Phase 4 — FinOps & observability
-
-- Cost mgmt budgets/alerts, standardized diag-settings module, common Kusto queries/workbooks.
-
-### Architecture
-
-```text
-azure-enterprise-starter-bicep/
-├─ bicepconfig.json
-├─ main.bicep                     # targetScope = 'subscription' (creates RGs & wires modules)
+````text
+azure-enterprise-architecture-starter-kit/
+├─ main.bicep                     # subscription-scope entry point
 ├─ modules/
-│  ├─ storage.bicep               # secure storage (no public, private endpoints optional)
-│  ├─ keyvault.bicep              # RBAC, purge protection, secrets/keys options
-│  ├─ vnet.bicep                  # hub-lite, subnets, service endpoints
-│  ├─ loganalytics.bicep          # LA + DCR + common tables
-│  ├─ diagnostics.bicep           # attach diag settings to any resource
-│  ├─ containerapps.bicep         # env, workload profile, app sample (later)
-│  ├─ acr.bicep
-│  ├─ policy.bicep                # starter policy set (deny public, enforce tags/TLS)
+│  ├─ vnet.bicep
+│  ├─ vnet-flowlogs.bicep
+│  ├─ storage.bicep
+│  ├─ keyvault.bicep
+│  ├─ loganalytics.bicep
+│  ├─ diagnostics.bicep
+│  ├─ policy.bicep
 │  └─ identities.bicep
 ├─ environments/
-│  ├─ dev/
-│  │  └─ sub.bicepparam
-│  └─ prod/
-│     └─ sub.bicepparam
-├─ scripts/
-│  ├─ deploy-sub.sh
-│  └─ deploy-sub.ps1
-└─ .github/workflows/
-   └─ deploy.yml                  # GitHub OIDC → az deployment sub create
+│  ├─ dev/sub.parameters.json
+│  └─ prod/sub.parameters.json
+└─ scripts/
+   ├─ deploy-sub.sh
+   └─ deploy-sub.ps1
 
-
-```
-
-### One-Line to Deploy
+## Deploy (CLI)
 
 ```bash
-az login
+az login --tenant <TENANT_ID> --use-device-code
 az account set --subscription "<SUBSCRIPTION_ID>"
+
 az deployment sub create \
   --location japaneast \
   --template-file main.bicep \
   --parameters @environments/dev/sub.parameters.json
 
-```
+````
 
-### Fix tenant issues
+Re-running is safe — the template is idempotent.
+
+## GitHub Actions (OIDC) — optional
+
+This repo includes `.github/workflows/deploy.yml` that deploys using federated identity (no Azure secrets needed).
+
+If using this, create three encrypted GitHub secrets:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+## Cleanup (to avoid cost)
 
 ```bash
-az logout
-az login --tenant <TENANT_ID> --use-device-code
+az group delete -n rg-platform-dev -y
+az group delete -n rg-network-dev -y
+az group delete -n rg-app-dev -y
+az group delete -n rg-secops-dev -y
 
 ```
+
+## License
+
+MIT. Free for personal or commercial use.

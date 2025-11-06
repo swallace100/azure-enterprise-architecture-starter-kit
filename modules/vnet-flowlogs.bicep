@@ -40,18 +40,12 @@ resource vnetFlow 'Microsoft.Network/networkWatchers/flowLogs@2023-11-01' = {
   properties: {
     targetResourceId: virtualNetworkId
     enabled: true
-
-    // flowLogType removed — Azure infers VNet vs NSG from targetResourceId
-
     storageId: storageAccountId
     retentionPolicy: {
       days: storageRetentionDays
       enabled: storageRetentionDays > 0
     }
-    format: {
-      type: 'JSON'
-      version: 2
-    }
+    format: { type: 'JSON', version: 2 }
     flowAnalyticsConfiguration: enableTrafficAnalytics
       ? {
           networkWatcherFlowAnalyticsConfiguration: {

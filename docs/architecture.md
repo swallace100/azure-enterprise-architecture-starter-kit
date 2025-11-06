@@ -167,6 +167,15 @@ Two common identities are created:
 
 No passwords required, no long-lived SP secrets, and identity federation only.
 
+## Private Endpoints (Zero Trust Ready)
+
+This starter kit is designed for private networking from day 1.  
+Storage and Key Vault support Private Endpoints without reworking the VNet:
+
+- No public exposure
+- DNS resolution works with Private DNS zones
+- Firewall + endpoint policies stay locked down
+
 ---
 
 ## Extensibility Model

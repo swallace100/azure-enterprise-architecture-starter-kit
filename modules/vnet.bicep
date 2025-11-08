@@ -36,6 +36,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   }
 }
 
+@batchSize(1)
 resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = [
   for sn in normalizedSubnets: {
     parent: vnet

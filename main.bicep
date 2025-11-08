@@ -10,6 +10,9 @@ param baseTags object = {
   owner: 'platform'
 }
 
+@description('Auto-managed RG that hosts Network Watcher')
+param watcherRgName string = 'NetworkWatcherRG'
+
 var rgPlatformName = 'rg-platform-${baseTags.env}'
 var rgNetworkName = 'rg-network-${baseTags.env}'
 var rgAppName = 'rg-app-${baseTags.env}'
@@ -125,15 +128,17 @@ module nsgApp 'modules/nsg.bicep' = {
   }
 }
 
-module vnetFlow 'modules/vnet-flowlogs.bicep' = {
+module vnetFlowLogs 'modules/vnet-flowlogs.bicep' = {
   name: 'vnetFlowLogs'
-  scope: resourceGroup(rgNetwork.name)
+  scope: resourceGroup(watcherRgName)
   params: {
     location: location
     virtualNetworkId: vnet.outputs.vnetId
     storageAccountId: storage.outputs.storageId
     logAnalyticsWorkspaceResourceId: logAnalytics.outputs.workspaceId
+    enableTrafficAnalytics: true
     trafficAnalyticsInterval: 60
+    storageRetentionDays: 0
   }
 }
 
